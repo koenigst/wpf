@@ -1,4 +1,4 @@
-// Licensed to the .NET Foundation under one or more agreements.
+﻿// Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
@@ -3204,13 +3204,44 @@ namespace MS.Internal
                     //
                     CodeVariableReferenceExpression cvreApp = GenerateAppInstance(cmmMain);
 
+                    CodeStatementCollection cscAppStatements = cmmMain.Statements;
+
+                    if (_ccRoot.ElementType.IsAssignableTo(typeof(IDisposable)) && !HostInBrowser)
+                    {
+                        //   try { appStatements.. }
+                        //   finally
+                        //   {
+                        //       if (app != null) ((IDisposable)app).Dispose();
+                        //   }
+                        //
+                        CodeTryCatchFinallyStatement ctcfAppStatements = new CodeTryCatchFinallyStatement();
+
+                        CodeCastExpression cceDisposable = new CodeCastExpression(typeof(IDisposable), cvreApp);
+                        CodeMethodReferenceExpression cmreDispose = new CodeMethodReferenceExpression(cceDisposable, DISPOSE);
+                        CodeMethodInvokeExpression cmieDispose = new CodeMethodInvokeExpression(cmreDispose);
+                        CodeExpressionStatement cesDispose = new CodeExpressionStatement(cmieDispose);
+
+                        CodeBinaryOperatorExpression cboeAppNotNull = new CodeBinaryOperatorExpression(
+                            cvreApp,
+                            CodeBinaryOperatorType.IdentityInequality,
+                            new CodePrimitiveExpression(null));
+
+                        CodeConditionStatement ccsAppNotNull = new CodeConditionStatement(cboeAppNotNull, cesDispose);
+
+                        ctcfAppStatements.FinallyStatements.Add(ccsAppNotNull);
+
+                        cmmMain.Statements.Add(ctcfAppStatements);
+
+                        cscAppStatements = ctcfAppStatements.TryStatements;
+                    }
+
                     if (_ccRoot.InitializeComponentFn != null)
                     {
                         //   app.InitializeComponent();
                         //
                         CodeMethodInvokeExpression cmieIT = new CodeMethodInvokeExpression();
                         cmieIT.Method = new CodeMethodReferenceExpression(cvreApp, INITIALIZE_COMPONENT);
-                        cmmMain.Statements.Add(new CodeExpressionStatement(cmieIT));
+                        cscAppStatements.Add(new CodeExpressionStatement(cmieIT));
                     }
 
                     if (!HostInBrowser)
@@ -3222,7 +3253,7 @@ namespace MS.Internal
                         cmieRun.Method = cmreRun;
 
                         CodeStatement csRun = new CodeExpressionStatement(cmieRun);
-                        cmmMain.Statements.Add(csRun);
+                        cscAppStatements.Add(csRun);
                     }
 
                     _ccRoot.CodeClass.Members.Add(cmmMain);
@@ -3565,6 +3596,8 @@ namespace MS.Internal
         private const string            SPLASHCLASSNAME = "SplashScreen";
         private const string            ARGS = "args";
         private const string            INITIALIZE_COMPONENT = "InitializeComponent";
+        private const string            DISPOSE = "Dispose";
+        private const string            NULL = "null";
         private const string            SWITCH_STATEMENT = $"{INDENT12}switch ({CONNECTIONID})\r\n{INDENT12}{{";
         private const string            BREAK_STATEMENT = $"{INDENT12}break;";
         private const string            CASE_STATEMENT = $"{INDENT12}case ";
